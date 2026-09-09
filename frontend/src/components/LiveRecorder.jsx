@@ -56,6 +56,7 @@ export default function LiveRecorder({ onSessionCreated }) {
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
   const chunkIndexRef = useRef(0);
+  const pendingUploadsRef = useRef(new Set());
   const timerIntervalRef = useRef(null);
 
   // Enumerate devices on mount
@@ -182,10 +183,11 @@ export default function LiveRecorder({ onSessionCreated }) {
     }
 
     try {
-      setRecordingState('RECORDING');
-      setElapsedSeconds(0);
-      setChunkCount(0);
-      chunkIndexRef.current = 0;
+      // Validate the browser stream before creating a database session.
+      const streamToRecord = screenShareActive && screenStreamRef.current ? screenStreamRef.current : webcamStreamRef.current;
+      if (!streamToRecord || streamToRecord.getVideoTracks().length === 0) {
+        throw new Error('No active camera or screen stream to record. Turn on the camera or share your screen first.');
+      }
 
       // 1. Initialize session on FastAPI backend
       const sessionInit = await api.startLiveSession({
@@ -201,12 +203,6 @@ export default function LiveRecorder({ onSessionCreated }) {
       setCurrentSessionId(sessionId);
 
       // 2. Select stream to record (composite / screen or webcam)
-      const streamToRecord = screenShareActive && screenStreamRef.current ? screenStreamRef.current : webcamStreamRef.current;
-
-      if (!streamToRecord) {
-        throw new Error('No active camera or screen stream to record');
-      }
-
       // Add audio track if screen share doesn't have mic
       const combinedTracks = [...streamToRecord.getVideoTracks()];
       if (webcamStreamRef.current && webcamStreamRef.current.getAudioTracks().length > 0) {
@@ -223,16 +219,25 @@ export default function LiveRecorder({ onSessionCreated }) {
 
       const recorder = new MediaRecorder(combinedStream, options);
       mediaRecorderRef.current = recorder;
+      pendingUploadsRef.current.clear();
+      setRecordingState('RECORDING');
+      setElapsedSeconds(0);
+      setChunkCount(0);
+      chunkIndexRef.current = 0;
 
       recorder.ondataavailable = async (e) => {
         if (e.data && e.data.size > 0) {
           const idx = chunkIndexRef.current++;
           setChunkCount((prev) => prev + 1);
-          try {
-            await api.uploadLiveChunk(sessionId, idx, e.data);
-          } catch (chunkErr) {
+          const upload = api.uploadLiveChunk(sessionId, idx, e.data).catch((chunkErr) => {
             console.error('Failed to upload live chunk:', chunkErr);
-          }
+            throw chunkErr;
+          });
+          pendingUploadsRef.current.add(upload);
+          upload.then(
+            () => pendingUploadsRef.current.delete(upload),
+            () => pendingUploadsRef.current.delete(upload),
+          );
         }
       };
 
@@ -273,29 +278,31 @@ export default function LiveRecorder({ onSessionCreated }) {
     setRecordingState('FINALIZING');
     clearInterval(timerIntervalRef.current);
 
-    // Stop MediaRecorder (flushes remaining data)
-    mediaRecorderRef.current.stop();
-
     try {
-      // Allow slight buffer for last chunk
-      setTimeout(async () => {
-        const result = await api.completeLiveSession(currentSessionId, {
-          duration_seconds: elapsedSeconds,
-          course_name_or_code: courseName,
-          faculty_name: facultyName,
-          title: lectureTitle,
-          classroom,
-          notes: 'Captured via Live Classroom Studio',
-        });
+      // stop() emits one final dataavailable event; wait for it and all uploads.
+      const recorderStopped = new Promise((resolve) => {
+        mediaRecorderRef.current.addEventListener('stop', resolve, { once: true });
+      });
+      mediaRecorderRef.current.stop();
+      await recorderStopped;
+      await Promise.all([...pendingUploadsRef.current]);
 
-        setRecordingState('COMPLETED');
-        setNotification({
-          type: 'success',
-          message: 'Lecture saved! FFmpeg extracted 16kHz audio & keyframes ready for AI intelligence.',
-        });
+      const result = await api.completeLiveSession(currentSessionId, {
+        duration_seconds: elapsedSeconds,
+        course_name_or_code: courseName,
+        faculty_name: facultyName,
+        title: lectureTitle,
+        classroom,
+        notes: 'Captured via Live Classroom Studio',
+      });
 
-        if (onSessionCreated) onSessionCreated(result);
-      }, 1200);
+      setRecordingState('COMPLETED');
+      setNotification({
+        type: 'success',
+        message: 'Lecture saved! Video and audio are stored and ready for AI intelligence.',
+      });
+
+      if (onSessionCreated) onSessionCreated(result);
     } catch (err) {
       setRecordingState('IDLE');
       setNotification({ type: 'error', message: `Finalize failed: ${err.message}` });

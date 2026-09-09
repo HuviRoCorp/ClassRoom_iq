@@ -149,6 +149,7 @@ class CaptureService:
             lecture_date=date.today(),
             duration_minutes=0,
             classroom=classroom or "Virtual / Recorded",
+            title=title or "Classroom Lecture",
             status="RECORDING",
         )
         self.db.add(lecture)
@@ -232,6 +233,8 @@ class CaptureService:
 
         if classroom:
             lecture.classroom = classroom
+        if title:
+            lecture.title = title
 
         recording = self.db.query(Recording).filter(Recording.session_id == session_id).first()
         if not recording:
@@ -351,6 +354,7 @@ class CaptureService:
             lecture_date=lecture_date_val or date.today(),
             duration_minutes=duration_minutes,
             classroom=classroom or "Virtual Classroom",
+            title=title or "Lecture Session",
             status="ACTIVE",
         )
         self.db.add(lecture)
@@ -423,7 +427,7 @@ class CaptureService:
         return SessionDetailResponse(
             session_id=session_id,
             recording_id=recording.id if recording else None,
-            title=f"{lecture.course.course_name} — Lecture" if lecture.course else "Classroom Lecture",
+            title=lecture.title or (f"{lecture.course.course_name} — Lecture" if lecture.course else "Classroom Lecture"),
             course_name=lecture.course.course_name if lecture.course else "Unknown Course",
             faculty_name=lecture.faculty.user.full_name if (lecture.faculty and lecture.faculty.user) else "Faculty",
             classroom=lecture.classroom,
@@ -457,7 +461,7 @@ class CaptureService:
             items.append(SessionSummaryResponse(
                 session_id=lec.id,
                 recording_id=rec.id if rec else None,
-                title=f"{lec.course.course_name} — Lecture" if lec.course else "Lecture",
+                title=lec.title or (f"{lec.course.course_name} — Lecture" if lec.course else "Lecture"),
                 course_name=lec.course.course_name if lec.course else "Unknown Course",
                 faculty_name=lec.faculty.user.full_name if (lec.faculty and lec.faculty.user) else "Faculty",
                 classroom=lec.classroom,

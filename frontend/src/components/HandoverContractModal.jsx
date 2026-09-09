@@ -19,6 +19,7 @@ export default function HandoverContractModal({ sessionId, onClose }) {
   const [contractData, setContractData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState('tree'); // 'tree' | 'raw'
 
   useEffect(() => {
@@ -45,9 +46,24 @@ export default function HandoverContractModal({ sessionId, onClose }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadPackage = () => {
+  const handleDownloadPackage = async () => {
     if (!sessionId) return;
-    window.open(`http://127.0.0.1:8000/api/v1/multimedia/session/${sessionId}/export`, '_blank');
+    try {
+      setExporting(true);
+      const { blob, filename } = await api.exportSessionPackage(sessionId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export handover package:', err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const metadata = contractData?.metadata || {};

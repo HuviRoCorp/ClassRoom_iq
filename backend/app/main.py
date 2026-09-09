@@ -17,11 +17,14 @@ from app.api.workflow import router as workflow_router
 from app.api.analysis import router as analysis_router
 from app.api.assistant import router as assistant_router
 from app.api.rag import router as rag_router
-from app.api.multimedia import router as multimedia_router
+from app.api.multimedia import router as multimedia_router, upload_lecture_package
 from app.api.audio import router as audio_router
+from app.api.audio import transcribe_audio_file
 from app.api.video import router as video_router
+from app.api.video import analyze_video_file
 from app.api.structuring import router as structuring_router
 from app.api.jobs import router as jobs_router
+from app.api.member1_contract import router as member1_contract_router
 from app.api.contract import install_api_contract
 from app.db import base  # noqa: F401 — imports all models so metadata is populated
 from app.db.init_db import init_db
@@ -108,3 +111,9 @@ app.include_router(audio_router, prefix="/api/v1", dependencies=_protected)
 app.include_router(video_router, prefix="/api/v1", dependencies=_protected)
 app.include_router(structuring_router, prefix="/api/v1", dependencies=_protected)
 app.include_router(jobs_router, prefix="/api/v1", dependencies=_protected)
+app.include_router(member1_contract_router, prefix="/api/v1", dependencies=_protected)
+
+# Exact Member 1 contract aliases. The module-prefixed routes remain available too.
+app.add_api_route("/api/v1/uploadLecture", upload_lecture_package, methods=["POST"], dependencies=_protected, include_in_schema=True)
+app.add_api_route("/api/v1/speech", transcribe_audio_file, methods=["POST"], dependencies=_protected, include_in_schema=True)
+app.add_api_route("/api/v1/video", analyze_video_file, methods=["POST"], dependencies=_protected, include_in_schema=True)

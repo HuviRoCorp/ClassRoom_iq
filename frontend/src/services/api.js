@@ -152,6 +152,21 @@ export const api = {
   getSessionDetail: async (sessionId) =>
     request(`${API_BASE}/multimedia/session/${sessionId}`),
 
+  exportSessionPackage: async (sessionId) => {
+    const response = await fetch(`${API_BASE}/multimedia/session/${sessionId}/export`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      if (response.status === 401) clearAuthToken();
+      throw new Error(data?.detail || data?.message || response.statusText || 'Export failed');
+    }
+
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `lecture_session_${sessionId}.json`;
+    return { blob: await response.blob(), filename };
+  },
+
   deleteSession: async (sessionId) =>
     request(`${API_BASE}/multimedia/session/${sessionId}`, { method: 'DELETE' }),
 

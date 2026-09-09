@@ -164,6 +164,12 @@ def process_full_pipeline(
         "This endpoint is synchronous (for short test clips or demo videos)."
     ),
 )
+@router.post(
+    "/video",
+    response_model=VideoProcessResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Standalone video intelligence analysis",
+)
 async def analyze_video_file(
     video_file: UploadFile = File(..., description="Classroom video file (MP4, WebM, MKV, AVI)"),
     sample_interval_sec: float = Form(5.0),

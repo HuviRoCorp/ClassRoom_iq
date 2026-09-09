@@ -120,6 +120,28 @@ class MediaJobService:
             self._set_completed(bg_db, job_id, result_summary=summary)
             logger.info("Audio job %s completed for session %s", job_id, session_id)
 
+            # Transcription creates the chunks required by the centralized AI pipeline.
+            # Start that pipeline only after audio processing has persisted them.
+            from sqlalchemy import select
+            from app.models.curriculum import Curriculum
+            from app.models.lecture_session import LectureSession
+            from app.services.analysis_execution_service import AnalysisExecutionService, run_analysis_job
+
+            lecture = bg_db.get(LectureSession, session_id)
+            curriculum = None
+            if lecture:
+                curriculum = bg_db.execute(
+                    select(Curriculum)
+                    .where(Curriculum.course_id == lecture.course_id, Curriculum.status == "ACTIVE")
+                    .order_by(Curriculum.uploaded_at.desc())
+                ).scalars().first()
+            if curriculum:
+                analysis_job, scheduled = AnalysisExecutionService(bg_db).start(session_id, curriculum.id)
+                if scheduled:
+                    run_analysis_job(analysis_job.id)
+            else:
+                logger.warning("No active curriculum found for live session %s; AI analysis was not queued", session_id)
+
         except Exception as exc:
             logger.exception("Audio job %s FAILED for session %s: %s", job_id, session_id, exc)
             self._set_failed(bg_db, job_id, error=str(exc))

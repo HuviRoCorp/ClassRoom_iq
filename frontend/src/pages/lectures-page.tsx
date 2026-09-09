@@ -10,6 +10,7 @@ import {
   Plus, 
   BookOpen, 
   ArrowLeft,
+  ArrowRight,
   X,
   Eye,
   Trash2,
@@ -18,39 +19,39 @@ import {
   Clock,
   User,
   Sparkles,
-  ArrowRight,
-  Filter,
   Check,
   Radio,
-<<<<<<< HEAD
   Share2,
-  Video,
-  Layers
-=======
   Video
->>>>>>> 8e2376a (feat: Integrate Live Studio Capture, robust multi-format lecture uploads, and dynamic AI results)
 } from 'lucide-react'
 import { PageLayout } from '@/components/page-layout'
 import { Card, EmptyState } from '@/components/ui'
 import { lectureService } from '@/services/lecture-service'
+// @ts-expect-error Legacy JavaScript API client is shared with the live recorder.
+import { api } from '@/services/api'
 import { useContextStore } from '@/store/context-store'
 import { useAuthStore } from '@/store/auth-store'
 import { friendlyError } from '@/hooks/use-api-query'
+import { workflowService } from '@/services/workflow-service'
 import LiveRecorder from '@/components/LiveRecorder'
+import MediaPreviewModal from '@/components/MediaPreviewModal'
 
-import LiveRecorder from '@/components/LiveRecorder'
 import HandoverContractModal from '@/components/HandoverContractModal'
 
 export function LecturesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
-  const { selectedCourseId, selectedCourseName, semester, setLectureId, selectedLectureId } = useContextStore()
+  const { selectedCourseId, selectedCourseName, selectedCurriculumId, semester, setLectureId, selectedLectureId } = useContextStore()
 
   const [activeTabMode, setActiveTabMode] = useState<'LIST' | 'LIVE'>('LIST')
   const [handoverSessionId, setHandoverSessionId] = useState<string | null>(null)
+  const [previewSession, setPreviewSession] = useState<Record<string, unknown> | null>(null)
+  const [deletingLiveId, setDeletingLiveId] = useState<string | null>(null)
+  const [selectedLiveIds, setSelectedLiveIds] = useState<string[]>([])
+  const [deletingSelectedLives, setDeletingSelectedLives] = useState(false)
+  const [analyzingLiveId, setAnalyzingLiveId] = useState<string | null>(null)
 
-  const [activeTabMode, setActiveTabMode] = useState<'LIST' | 'LIVE'>('LIST')
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'READY' | 'PROCESSING' | 'FAILED'>('ALL')
   
@@ -79,6 +80,67 @@ export function LecturesPage() {
       return isProcessing ? 3000 : false
     }
   })
+
+  const { data: liveSessionsData, refetch: refetchLiveSessions } = useQuery({
+    queryKey: ['live-sessions'],
+    queryFn: () => api.listSessions(0, 50),
+    refetchInterval: 5000,
+  })
+
+  const liveSessions = (liveSessionsData?.items || []) as Array<Record<string, unknown>>
+  const liveSessionIds = liveSessions.map((session) => String(session.session_id))
+  const allLiveSelected = liveSessionIds.length > 0 && liveSessionIds.every((id) => selectedLiveIds.includes(id))
+
+  const handleDeleteLiveSession = async (sessionId: string) => {
+    if (!window.confirm('Delete this live lecture and its saved video, audio, and chunks?')) return
+    try {
+      setDeletingLiveId(sessionId)
+      await api.deleteSession(sessionId)
+      setSelectedLiveIds((current) => current.filter((id) => id !== sessionId))
+      if (previewSession?.session_id === sessionId) setPreviewSession(null)
+      await refetchLiveSessions()
+    } catch (deleteError) {
+      setClientError(deleteError instanceof Error ? deleteError.message : 'Unable to delete the live lecture.')
+    } finally {
+      setDeletingLiveId(null)
+    }
+  }
+
+  const handleDeleteSelectedLiveSessions = async () => {
+    if (selectedLiveIds.length === 0) return
+    if (!window.confirm(`Delete ${selectedLiveIds.length} selected live lecture(s) and their saved media?`)) return
+
+    try {
+      setDeletingSelectedLives(true)
+      await Promise.all(selectedLiveIds.map((sessionId) => api.deleteSession(sessionId)))
+      if (previewSession && selectedLiveIds.includes(String(previewSession.session_id))) setPreviewSession(null)
+      setSelectedLiveIds([])
+      await refetchLiveSessions()
+    } catch (deleteError) {
+      setClientError(deleteError instanceof Error ? deleteError.message : 'Unable to delete the selected live lectures.')
+      await refetchLiveSessions()
+    } finally {
+      setDeletingSelectedLives(false)
+    }
+  }
+
+  const handleAnalyzeLiveSession = async (sessionId: string) => {
+    if (!selectedCurriculumId) {
+      setClientError('Select or upload a curriculum before starting AI analysis.')
+      return
+    }
+
+    try {
+      setAnalyzingLiveId(sessionId)
+      setLectureId(sessionId)
+      await workflowService.run({ lecture_id: sessionId, curriculum_id: selectedCurriculumId, regenerate: false })
+      navigate('/results')
+    } catch (analysisError) {
+      setClientError(analysisError instanceof Error ? analysisError.message : 'AI analysis could not be started. Confirm that this recording has a transcript.')
+    } finally {
+      setAnalyzingLiveId(null)
+    }
+  }
 
   // Fetch viewing lecture detail & chunks
   const { data: viewingLecture } = useQuery({
@@ -236,6 +298,8 @@ export function LecturesPage() {
             <LiveRecorder
               onSessionCreated={(sessionData: any) => {
                 queryClient.invalidateQueries({ queryKey: ['lectures'] })
+                queryClient.invalidateQueries({ queryKey: ['live-sessions'] })
+                refetchLiveSessions()
                 const newId = String(sessionData?.session_id || sessionData?.id || '')
                 if (newId) {
                   setLectureId(newId)
@@ -445,6 +509,110 @@ export function LecturesPage() {
         )}
       </>
     )}
+
+        {liveSessions.length > 0 && (
+          <section className="mt-8 space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <span className="text-xs font-mono font-bold text-rose-400 uppercase tracking-wider block">SAVED LIVE RECORDINGS</span>
+                <h2 className="mt-1 text-xl font-extrabold text-ink dark:text-white">Live lectures saved on this device</h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-xl border border-line bg-canvas px-3 py-2 text-xs font-bold text-muted dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={allLiveSelected}
+                    onChange={(event) => setSelectedLiveIds(event.target.checked ? liveSessionIds : [])}
+                    className="accent-brand"
+                  />
+                  Select all
+                </label>
+                <button
+                  onClick={handleDeleteSelectedLiveSessions}
+                  disabled={selectedLiveIds.length === 0 || deletingSelectedLives}
+                  className="inline-flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-bold text-danger hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deletingSelectedLives ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  Delete selected{selectedLiveIds.length > 0 ? ` (${selectedLiveIds.length})` : ''}
+                </button>
+                <span className="text-xs font-semibold text-muted dark:text-slate-300">{liveSessions.length} recording(s)</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {liveSessions.map((session) => {
+                const sessionId = String(session.session_id)
+                const hasVideo = Boolean(session.has_video)
+                const status = String(session.status || 'SAVED')
+                return (
+                  <Card key={sessionId} className="flex flex-col justify-between gap-4 border-rose-400/20 p-6 shadow-soft">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-rose-400">LIVE CAPTURE</span>
+                          <h3 className="mt-1 text-lg font-extrabold text-ink dark:text-white">{String(session.title || 'Live lecture')}</h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-canvas" title="Select live lecture">
+                            <input
+                              type="checkbox"
+                              checked={selectedLiveIds.includes(sessionId)}
+                              onChange={(event) => setSelectedLiveIds((current) => event.target.checked ? [...current, sessionId] : current.filter((id) => id !== sessionId))}
+                              className="accent-brand"
+                            />
+                          </label>
+                          <span className="rounded-full bg-teal-500/15 px-2.5 py-1 text-[10px] font-bold uppercase text-teal-300">{status}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted dark:text-slate-300">{String(session.course_name || 'Course not specified')} · {String(session.classroom || 'Recorded classroom')}</p>
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <span className="rounded-lg bg-canvas px-2.5 py-1 text-muted">{hasVideo ? 'Video saved' : 'No video file'}</span>
+                        {Boolean(session.has_audio) && <span className="rounded-lg bg-canvas px-2.5 py-1 text-muted">Audio saved</span>}
+                        <span className="rounded-lg bg-canvas px-2.5 py-1 text-muted">{Math.round(Number(session.duration_seconds || 0))}s</span>
+                      </div>
+                    </div>
+                      <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+                      <span className="max-w-[13rem] truncate font-mono text-[10px] text-muted" title={sessionId}>{sessionId}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setPreviewSession(session)}
+                            disabled={!hasVideo && !Boolean(session.has_audio)}
+                            className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            View recording
+                          </button>
+                          <button
+                            onClick={() => handleAnalyzeLiveSession(sessionId)}
+                            disabled={analyzingLiveId === sessionId}
+                            className="inline-flex items-center gap-2 rounded-xl border border-teal-400/30 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-300 hover:bg-teal-500/20 disabled:opacity-50"
+                          >
+                            {analyzingLiveId === sessionId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                            {analyzingLiveId === sessionId ? 'Starting…' : 'AI Analysis'}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteLiveSession(sessionId)}
+                            disabled={deletingLiveId === sessionId}
+                            title="Delete live lecture"
+                            className="inline-flex items-center justify-center rounded-xl border border-danger/30 bg-danger/10 p-2 text-danger hover:bg-danger/20 disabled:opacity-50"
+                          >
+                            {deletingLiveId === sessionId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {previewSession && (
+          <MediaPreviewModal
+            session={previewSession}
+            onClose={() => setPreviewSession(null)}
+          />
+        )}
 
         {/* LECTURE UPLOAD MODAL */}
         {isUploadOpen && (
@@ -797,9 +965,6 @@ export function LecturesPage() {
               </div>
             </div>
           </div>
-        )}
-
-        </>
         )}
 
         {/* MEMBER 1 HANDOVER CONTRACT INSPECTION MODAL */}

@@ -233,6 +233,11 @@ def process_audio_sync(
         "Non-WAV formats are automatically converted to 16kHz mono WAV before Whisper processing."
     ),
 )
+@router.post(
+    "/speech",
+    status_code=status.HTTP_200_OK,
+    summary="Standalone speech transcription",
+)
 async def transcribe_audio_file(
     audio_file: Annotated[UploadFile, File(description="Audio or video file to transcribe (WAV, MP3, M4A, MP4, WebM, etc.)")],
 ) -> dict:

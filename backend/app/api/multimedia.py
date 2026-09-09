@@ -14,6 +14,7 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -39,6 +40,7 @@ from app.schemas.multimedia import (
 )
 from app.schemas.response import created, ok
 from app.services.multimedia.capture_service import CaptureService
+from app.services.job_service import MediaJobService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/multimedia", tags=["Multimedia & Lecture Capture"])
@@ -104,6 +106,7 @@ async def upload_chunk(
 )
 def complete_session(
     session_id: UUID,
+    background_tasks: BackgroundTasks,
     payload: Optional[SessionCompleteRequest] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> dict:
@@ -125,6 +128,41 @@ def complete_session(
             classroom=classroom,
             notes=notes,
         )
+        audio_job = MediaJobService(db).create_job(
+            session_id=session_id,
+            job_type="audio_process",
+            config_snapshot={
+                "domain_subject": "auto",
+                "language": "auto",
+                "model_size": "base",
+                "diarization_mode": "lecture",
+                "enable_vad": True,
+                "enable_diarization": True,
+                "sync_academic": True,
+            },
+        )
+        background_tasks.add_task(
+            MediaJobService(db).run_audio_job,
+            job_id=audio_job.id,
+            session_id=session_id,
+            sync_academic=True,
+        )
+        video_job = MediaJobService(db).create_job(
+            session_id=session_id,
+            job_type="video_process",
+            config_snapshot={
+                "sample_interval_sec": 5.0,
+                "detect_teacher": True,
+                "detect_board": True,
+                "detect_ppt": True,
+                "min_scene_duration_sec": 3.0,
+            },
+        )
+        background_tasks.add_task(
+            MediaJobService(db).run_video_job,
+            job_id=video_job.id,
+            session_id=session_id,
+        )
         return ok(data=res.model_dump(mode="json"), message=res.message, start_ts=start_ts)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -138,6 +176,11 @@ def complete_session(
     status_code=status.HTTP_201_CREATED,
     summary="Upload a full lecture package (Video/Audio + Slides)",
     description="Batch upload of pre-recorded lecture video, audio, and/or PPTX/PDF presentation slides with metadata.",
+)
+@router.post(
+    "/uploadLecture",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a complete lecture package",
 )
 async def upload_lecture_package(
     course_name_or_code: Annotated[str, Form(description="Course code or name")],
