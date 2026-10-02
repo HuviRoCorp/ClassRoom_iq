@@ -1,6 +1,9 @@
 import { useAuthStore } from '../store/auth-store';
 
-const API_BASE = '/api/v1';
+const ENV_API_URL = (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL)) || '';
+const API_BASE = ENV_API_URL
+  ? (ENV_API_URL.endsWith('/api/v1') ? ENV_API_URL : `${ENV_API_URL.replace(/\/+$/, '')}/api/v1`)
+  : '/api/v1';
 
 // ── Auth Token Helpers ─────────────────────────────────────────────────────────
 
@@ -173,13 +176,13 @@ export const api = {
   // ── Media Stream URLs (no auth needed — these are direct file references) ─
   getStreamUrl: (sessionId, mediaType = 'video') => {
     const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const base = isLocalhost ? 'http://127.0.0.1:8000/api/v1' : API_BASE;
+    const base = ENV_API_URL ? API_BASE : (isLocalhost ? 'http://127.0.0.1:8000/api/v1' : API_BASE);
     return `${base}/multimedia/session/${sessionId}/stream?media_type=${mediaType}`;
   },
 
   getSlideUrl: (sessionId, filename) => {
     const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const base = isLocalhost ? 'http://127.0.0.1:8000/api/v1' : API_BASE;
+    const base = ENV_API_URL ? API_BASE : (isLocalhost ? 'http://127.0.0.1:8000/api/v1' : API_BASE);
     return `${base}/multimedia/session/${sessionId}/slides/${filename}`;
   },
 
