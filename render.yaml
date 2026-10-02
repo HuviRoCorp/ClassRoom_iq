@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install --upgrade pip && pip install --prefer-binary -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       CORS_ALLOWED_ORIGINS: "*"
       DATABASE_URL: "postgresql://classroomiq_db_user:Im7uEHYKYXgCWD8ZsfbNQdRIMhL7uufk@dpg-davmdb49v7es738c1lp0-a.oregon-postgres.render.com/classroomiq_db"
