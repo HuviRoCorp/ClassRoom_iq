@@ -484,8 +484,20 @@ class CaptureService:
             if rec and rec.video_path and Path(rec.video_path).exists():
                 return Path(rec.video_path)
             # Check raw directory
-            raw_files = list(dirs["raw"].glob("*.webm")) + list(dirs["raw"].glob("*.mp4"))
-            return raw_files[0] if raw_files else None
+            raw_files = (
+                list(dirs["raw"].glob("*.webm")) + 
+                list(dirs["raw"].glob("*.mp4")) + 
+                list(dirs["raw"].glob("*.mov")) + 
+                list(dirs["raw"].glob("*.mkv")) + 
+                list(dirs["raw"].glob("*.avi"))
+            )
+            if raw_files:
+                return raw_files[0]
+            # Fallback check
+            audio_files = list(dirs["audio"].glob("*.wav")) + list(dirs["audio"].glob("*.mp3"))
+            if audio_files:
+                return audio_files[0]
+            return None
         elif media_type in {"audio_16k", "audio"}:
             audio_16k = dirs["audio"] / "audio_16k.wav"
             if audio_16k.exists():
@@ -493,6 +505,15 @@ class CaptureService:
             rec = self.db.query(Recording).filter(Recording.session_id == session_id).first()
             if rec and rec.audio_path and Path(rec.audio_path).exists():
                 return Path(rec.audio_path)
+            aud_files = (
+                list(dirs["audio"].glob("*.wav")) + 
+                list(dirs["audio"].glob("*.mp3")) + 
+                list(dirs["raw"].glob("*.wav")) + 
+                list(dirs["raw"].glob("*.mp3")) +
+                list(dirs["raw"].glob("*.webm")) +
+                list(dirs["raw"].glob("*.mp4"))
+            )
+            return aud_files[0] if aud_files else None
         return None
 
     def delete_session(self, session_id: UUID) -> bool:

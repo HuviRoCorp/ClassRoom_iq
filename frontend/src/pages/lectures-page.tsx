@@ -476,30 +476,49 @@ export function LecturesPage() {
                     </div>
 
                     {/* Footer Actions */}
-                    <div className="mt-5 pt-4 border-t border-line flex items-center justify-between">
-                      <button
-                        onClick={() => {
-                          setLectureId(lecId)
-                          setViewingLectureId(lecId)
-                        }}
-                        className="inline-flex items-center gap-2 text-xs font-extrabold text-brand hover:underline"
-                      >
-                        <Eye className="h-4 w-4" />
-                        <span>View Lecture & Transcript</span>
-                      </button>
-
-                      {isReady && (
+                    <div className="mt-5 pt-4 border-t border-line flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
                             setLectureId(lecId)
-                            navigate('/coverage')
+                            setPreviewSession({
+                              session_id: lecId,
+                              title: lecTitle,
+                              course_name: String(l.course_name || l.course_title || 'General Course'),
+                              faculty_name: String(l.faculty_name || 'Faculty Member'),
+                              has_video: Boolean(l.has_video || l.video_path || l.media_type === 'video'),
+                              has_audio: Boolean(l.has_audio || l.audio_path || true),
+                              status: 'ACTIVE',
+                            })
                           }}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-400 hover:underline"
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-soft hover:bg-brand/90 transition"
                         >
-                          <Sparkles className="h-3.5 w-3.5" />
-                          <span>AI Analysis →</span>
+                          <Video className="h-3.5 w-3.5" />
+                          <span>View Recording</span>
                         </button>
-                      )}
+
+                        <button
+                          onClick={() => {
+                            setLectureId(lecId)
+                            setViewingLectureId(lecId)
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs font-bold text-muted hover:text-ink dark:hover:text-white transition"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          <span>Transcripts</span>
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setLectureId(lecId)
+                          navigate(`/results?lectureId=${lecId}`)
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-teal-400/30 bg-teal-500/10 px-3 py-1.5 text-xs font-bold text-teal-300 hover:bg-teal-500/20 transition"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>AI Analysis →</span>
+                      </button>
                     </div>
                   </Card>
                 )
@@ -572,23 +591,34 @@ export function LecturesPage() {
                       </div>
                     </div>
                       <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
-                      <span className="max-w-[13rem] truncate font-mono text-[10px] text-muted" title={sessionId}>{sessionId}</span>
+                      <span className="max-w-[8rem] truncate font-mono text-[10px] text-muted" title={sessionId}>{sessionId}</span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setPreviewSession(session)}
-                            disabled={!hasVideo && !Boolean(session.has_audio)}
-                            className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand/90 transition"
                           >
-                            <Eye className="h-3.5 w-3.5" />
+                            <Video className="h-3.5 w-3.5" />
                             View recording
                           </button>
                           <button
-                            onClick={() => handleAnalyzeLiveSession(sessionId)}
-                            disabled={analyzingLiveId === sessionId}
-                            className="inline-flex items-center gap-2 rounded-xl border border-teal-400/30 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-300 hover:bg-teal-500/20 disabled:opacity-50"
+                            onClick={() => {
+                              setLectureId(sessionId)
+                              setViewingLectureId(sessionId)
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 text-xs font-bold text-muted hover:text-ink dark:hover:text-white transition"
                           >
-                            {analyzingLiveId === sessionId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                            {analyzingLiveId === sessionId ? 'Starting…' : 'AI Analysis'}
+                            <FileText className="h-3.5 w-3.5" />
+                            Transcripts
+                          </button>
+                          <button
+                            onClick={() => {
+                              setLectureId(sessionId)
+                              navigate(`/results?lectureId=${sessionId}`)
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-teal-400/30 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-300 hover:bg-teal-500/20 transition"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                            AI Analysis →
                           </button>
                           <button
                             onClick={() => handleDeleteLiveSession(sessionId)}

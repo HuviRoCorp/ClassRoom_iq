@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 import time
 from datetime import date, datetime, timezone
 from typing import Annotated, Any
@@ -109,6 +110,9 @@ def list_lectures(
 
         lectures = query.order_by(LectureSession.created_at.desc()).all()
 
+        from app.services.multimedia.storage_service import MultimediaStorageService
+        storage = MultimediaStorageService()
+
         items = []
         for l in lectures:
             transcript = db.query(Transcript).filter(Transcript.lecture_id == l.id).first()
@@ -124,9 +128,25 @@ def list_lectures(
             if l.course and hasattr(l.course, "course_name"):
                 c_name = str(l.course.course_name)
 
+            rec = l.recording
+            has_video = bool(rec and rec.video_path and Path(rec.video_path).exists()) if rec else False
+            has_audio = bool(rec and rec.audio_path and Path(rec.audio_path).exists()) if rec else False
+
+            dirs = storage.get_session_paths(l.id)
+            if not has_video:
+                raw_videos = list(dirs["raw"].glob("*.webm")) + list(dirs["raw"].glob("*.mp4")) + list(dirs["raw"].glob("*.mkv")) + list(dirs["raw"].glob("*.mov"))
+                has_video = len(raw_videos) > 0
+            if not has_audio:
+                raw_audios = list(dirs["audio"].glob("*.wav")) + list(dirs["audio"].glob("*.mp3")) + list(dirs["raw"].glob("*.wav")) + list(dirs["raw"].glob("*.mp3"))
+                has_audio = len(raw_audios) > 0 or has_video
+
+            video_url = f"/api/v1/multimedia/session/{l.id}/stream?media_type=video" if has_video else None
+            audio_url = f"/api/v1/multimedia/session/{l.id}/stream?media_type=audio_16k" if has_audio else None
+
             items.append({
                 "id": str(l.id),
                 "lecture_id": str(l.id),
+                "session_id": str(l.id),
                 "title": str(l.title or c_name or "Class Lecture Session"),
                 "course_id": str(l.course_id),
                 "course_name": c_name,
@@ -136,6 +156,10 @@ def list_lectures(
                 "duration_minutes": l.duration_minutes or 45,
                 "classroom": str(l.classroom or "Main Lecture Hall"),
                 "has_transcript": has_transcript,
+                "has_video": has_video,
+                "has_audio": has_audio,
+                "video_url": video_url,
+                "audio_url": audio_url,
                 "transcript_id": str(transcript.id) if transcript else None,
                 "total_words": transcript.total_words if transcript else 0,
                 "status": status_str,
@@ -250,6 +274,9 @@ async def upload_lecture(
     # 3. Read and Extract content
     transcript_text = ""
     transcript_items = None
+    lecture_id = uuid.uuid4()
+    saved_video_path = None
+    saved_audio_path = None
 
     if file and file.filename:
         content_bytes = await file.read()
@@ -276,24 +303,49 @@ async def upload_lecture(
             # Save raw media to session storage for stream/playback
             try:
                 from app.services.multimedia.storage_service import MultimediaStorageService
+                from app.services.multimedia.ffmpeg_processor import FFmpegProcessor
+                from app.models.recording import Recording
+
                 storage = MultimediaStorageService()
-                temp_sess_id = uuid.uuid4()
-                dirs = storage.get_session_paths(temp_sess_id)
-                saved_media_path = dirs["raw"] / file.filename
+                ffmpeg = FFmpegProcessor()
+                dirs = storage.init_session_dir(lecture_id)
+
+                is_video = filename.endswith((".mp4", ".webm", ".mov", ".mkv"))
+                target_dir = dirs["raw"] if is_video else dirs["audio"]
+                saved_media_path = target_dir / file.filename
                 with open(saved_media_path, "wb") as f_out:
                     f_out.write(content_bytes)
 
-                # Attempt whisper transcription
+                audio_16k_path = dirs["audio"] / "audio_16k.wav"
+                ffmpeg.extract_audio_16k_mono(saved_media_path, audio_16k_path)
+
+                if is_video:
+                    saved_video_path = saved_media_path
+                    saved_audio_path = audio_16k_path if audio_16k_path.exists() else saved_media_path
+                else:
+                    saved_audio_path = audio_16k_path if audio_16k_path.exists() else saved_media_path
+
+                # Create Recording entity attached to lecture
+                recording_ent = Recording(
+                    session_id=lecture_id,
+                    video_path=str(saved_video_path) if saved_video_path else None,
+                    audio_path=str(saved_audio_path) if saved_audio_path else None,
+                    status="ACTIVE",
+                )
+                db.add(recording_ent)
+
+                # Attempt whisper transcription on extracted 16kHz audio
                 from app.services.audio.whisper_engine import WhisperEngine
                 whisper = WhisperEngine()
-                stt_segments = whisper.transcribe_audio(saved_media_path)
+                stt_source = audio_16k_path if audio_16k_path.exists() else saved_media_path
+                stt_segments = whisper.transcribe_audio(stt_source)
                 if stt_segments:
                     transcript_items = [
                         {"speaker": "Faculty", "start": seg.get("start", 0.0), "end": seg.get("end", 5.0), "text": seg.get("text", "")}
                         for seg in stt_segments if seg.get("text")
                     ]
                 if not transcript_items:
-                    transcript_text = f"Spoken lecture recording for {title.strip()}. Media file {file.filename} ingested."
+                    transcript_text = f"Spoken lecture recording for {title.strip()}. Media file {file.filename} ingested and ready for AI playback."
             except Exception as e:
                 logger.warning("Audio processing transcription fallback: %s", e)
                 transcript_text = f"Spoken lecture recording for {title.strip()}. Audio content from {file.filename}."
@@ -340,12 +392,14 @@ async def upload_lecture(
             pass
 
     lecture = LectureSession(
+        id=lecture_id,
         course_id=course.id,
         faculty_id=faculty.id,
         title=title.strip(),
         lecture_date=parsed_date,
         duration_minutes=max(15, int(transcript_items[-1]["end"] // 60)),
         classroom="Lecture Hall A",
+        status="ACTIVE",
     )
     db.add(lecture)
     db.flush()
@@ -362,14 +416,22 @@ async def upload_lecture(
     )
     db.commit()
 
+    has_video = saved_video_path is not None
+    has_audio = saved_audio_path is not None or has_video
+
     response_data = {
         "id": str(lecture.id),
         "lecture_id": str(lecture.id),
+        "session_id": str(lecture.id),
         "title": lecture.title,
         "course_id": str(course.id),
         "course_name": course.course_name,
         "duration_minutes": lecture.duration_minutes,
         "status": "READY",
+        "has_video": has_video,
+        "has_audio": has_audio,
+        "video_url": f"/api/v1/multimedia/session/{lecture.id}/stream?media_type=video" if has_video else None,
+        "audio_url": f"/api/v1/multimedia/session/{lecture.id}/stream?media_type=audio_16k" if has_audio else None,
         "result": result,
     }
 

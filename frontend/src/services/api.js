@@ -171,11 +171,17 @@ export const api = {
     request(`${API_BASE}/multimedia/session/${sessionId}`, { method: 'DELETE' }),
 
   // ── Media Stream URLs (no auth needed — these are direct file references) ─
-  getStreamUrl: (sessionId, mediaType = 'video') =>
-    `${API_BASE}/multimedia/session/${sessionId}/stream?media_type=${mediaType}`,
+  getStreamUrl: (sessionId, mediaType = 'video') => {
+    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const base = isLocalhost ? 'http://127.0.0.1:8000/api/v1' : API_BASE;
+    return `${base}/multimedia/session/${sessionId}/stream?media_type=${mediaType}`;
+  },
 
-  getSlideUrl: (sessionId, filename) =>
-    `${API_BASE}/multimedia/session/${sessionId}/slides/${filename}`,
+  getSlideUrl: (sessionId, filename) => {
+    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const base = isLocalhost ? 'http://127.0.0.1:8000/api/v1' : API_BASE;
+    return `${base}/multimedia/session/${sessionId}/slides/${filename}`;
+  },
 
   // ── Async Job Queue ───────────────────────────────────────────────────────
 

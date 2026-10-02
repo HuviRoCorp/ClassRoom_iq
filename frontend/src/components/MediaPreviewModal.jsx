@@ -113,6 +113,25 @@ export default function MediaPreviewModal({ session, onClose, onDelete }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <a
+              href={`/results?lectureId=${session.session_id}`}
+              className="btn btn-primary"
+              style={{
+                padding: '0.4rem 0.85rem',
+                fontSize: '0.8rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: '#ffffff',
+                textDecoration: 'none',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 700,
+              }}
+            >
+              <Sparkles size={14} /> AI Analysis →
+            </a>
+
             <button
               className="btn btn-secondary"
               style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
@@ -179,10 +198,11 @@ export default function MediaPreviewModal({ session, onClose, onDelete }) {
                 justifyContent: 'center',
               }}
             >
-              {session.has_video ? (
+              {session.has_video !== false ? (
                 <video
                   ref={videoRef}
                   controls
+                  playsInline
                   style={{ width: '100%', maxHeight: '300px' }}
                   src={api.getStreamUrl(session.session_id, 'video')}
                 />
@@ -193,7 +213,13 @@ export default function MediaPreviewModal({ session, onClose, onDelete }) {
                   <audio ref={audioRef} controls style={{ width: '100%' }} src={api.getStreamUrl(session.session_id, 'audio_16k')} />
                 </div>
               ) : (
-                <p style={{ color: 'var(--text-muted)' }}>No media file available</p>
+                <video
+                  ref={videoRef}
+                  controls
+                  playsInline
+                  style={{ width: '100%', maxHeight: '300px' }}
+                  src={api.getStreamUrl(session.session_id, 'video')}
+                />
               )}
             </div>
 
