@@ -49,9 +49,27 @@ def on_startup():
     init_db()
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+raw_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "https://class-room-iq3.vercel.app",
+    "https://class-room-iq.vercel.app",
+    "https://classroom-iq.vercel.app",
+]
+for origin in raw_origins:
+    if origin != "*" and origin not in allowed_origins:
+        allowed_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if origin.strip()],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
