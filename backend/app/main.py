@@ -110,26 +110,30 @@ def health_ready():
         raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
 
 
+# ── Mount Routers (both /api/v1 and root prefixes for compatibility) ──────────
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(auth_router)
+
 _protected = [Depends(get_current_user)]
-app.include_router(curriculum_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(reference_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(lecture_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(validation_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(coverage_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(teaching_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(recommendations_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(explanations_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(workflow_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(analysis_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(assistant_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(rag_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(multimedia_router, prefix="/api/v1")
-app.include_router(audio_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(video_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(structuring_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(jobs_router, prefix="/api/v1", dependencies=_protected)
-app.include_router(member1_contract_router, prefix="/api/v1", dependencies=_protected)
+for prefix in ("/api/v1", ""):
+    app.include_router(curriculum_router, prefix=prefix, dependencies=_protected)
+    app.include_router(reference_router, prefix=prefix, dependencies=_protected)
+    app.include_router(lecture_router, prefix=prefix, dependencies=_protected)
+    app.include_router(validation_router, prefix=prefix, dependencies=_protected)
+    app.include_router(coverage_router, prefix=prefix, dependencies=_protected)
+    app.include_router(teaching_router, prefix=prefix, dependencies=_protected)
+    app.include_router(recommendations_router, prefix=prefix, dependencies=_protected)
+    app.include_router(explanations_router, prefix=prefix, dependencies=_protected)
+    app.include_router(workflow_router, prefix=prefix, dependencies=_protected)
+    app.include_router(analysis_router, prefix=prefix, dependencies=_protected)
+    app.include_router(assistant_router, prefix=prefix, dependencies=_protected)
+    app.include_router(rag_router, prefix=prefix, dependencies=_protected)
+    app.include_router(multimedia_router, prefix=prefix)
+    app.include_router(audio_router, prefix=prefix, dependencies=_protected)
+    app.include_router(video_router, prefix=prefix, dependencies=_protected)
+    app.include_router(structuring_router, prefix=prefix, dependencies=_protected)
+    app.include_router(jobs_router, prefix=prefix, dependencies=_protected)
+    app.include_router(member1_contract_router, prefix=prefix, dependencies=_protected)
 
 # Exact Member 1 contract aliases. The module-prefixed routes remain available too.
 app.add_api_route("/api/v1/uploadLecture", upload_lecture_package, methods=["POST"], dependencies=_protected, include_in_schema=True)
